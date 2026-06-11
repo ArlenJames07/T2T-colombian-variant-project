@@ -1,0 +1,46 @@
+project:
+  name: genome-variant-project
+  reference_build: T2T-CHM13v2.0
+
+paths:
+  raw_reads: /path/to/raw_reads
+  results: results
+  logs: logs
+  work: work
+  samples: metadata/samples.tsv
+
+references:
+  fasta: /path/to/references/chm13v2.0.fa
+  annotation_gtf: /path/to/references/chm13v2.0.gtf
+  tandem_repeats: /path/to/references/chm13v2.0.trf.bed
+  segmental_duplications: /path/to/references/chm13v2.0.segdup.bed
+
+resources:
+  threads: 32
+  memory_gb: 120
+
+assembly:
+  assembler: hifiasm
+  generate_primary: true
+  generate_haplotypes: true
+
+read_based_callers:
+  small_variants:
+    - deepvariant
+
+  structural_variants:
+    - pbsv
+    - sniffles2
+    - cutesv
+    - nanovar
+    - sawfish
+    - hificnv 
+
+assembly_based_callers:
+    - svim-asm
+
+merging:
+  minimum_callers: 2
+  require_cross_evidence: false
+  maximum_breakpoint_distance: 1000
+  minimum_reciprocal_overlap: 0.5

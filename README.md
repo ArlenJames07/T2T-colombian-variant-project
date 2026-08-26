@@ -1,6 +1,6 @@
 # T2T Colombian Variant Project
 
-Reorganized, reproducible code for PacBio HiFi assembly, small-variant and
+Reproducible code for PacBio HiFi assembly, small-variant and
 structural-variant calling, phasing, methylation, annotation, and multi-omic
 integration against T2T-CHM13v2.0.
 

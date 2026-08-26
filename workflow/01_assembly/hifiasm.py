@@ -23,10 +23,15 @@ except ImportError as exc:  # pragma: no cover - depends on the runtime environm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FASTQ_SUFFIXES = (".fastq.gz", ".fq.gz", ".fastq", ".fq")
-GFA_SUFFIXES = {
+RAW_GFA_SUFFIXES = {
     ".asm.bp.hap1.p_ctg.gfa": "hap1",
     ".asm.bp.hap2.p_ctg.gfa": "hap2",
     ".asm.bp.p_ctg.gfa": "p_ctg",
+}
+NORMALIZED_GFA_SUFFIXES = {
+    "_hap1.gfa": "hap1",
+    "_hap2.gfa": "hap2",
+    "_p_ctg.gfa": "p_ctg",
 }
 
 
@@ -69,6 +74,14 @@ def sample_name(read: Path) -> str:
     return strip_fastq_suffix(read.name).removeprefix("01_")
 
 
+def sample_code(name: str) -> str:
+    """Return the cohort code at the end of an established sample name."""
+    code = name.rsplit("_", maxsplit=1)[-1]
+    if not code:
+        raise ValueError(f"Could not derive a sample code from: {name}")
+    return code
+
+
 def selected(name: str, include: list[str], exclude: list[str]) -> bool:
     return (not include or any(term in name for term in include)) and not any(
         term in name for term in exclude
@@ -101,6 +114,7 @@ def find_reads(reads_dir: Path) -> list[Path]:
 
 def assemble(
     reads_dir: Path,
+    work_dir: Path,
     gfa_dir: Path,
     hifiasm: Path,
     threads: int,
@@ -112,29 +126,55 @@ def assemble(
     reads = [read for read in find_reads(reads_dir) if selected(read.name, include, exclude)]
     if not reads:
         raise RuntimeError("No FASTQ files matched the requested sample filters")
+    samples: dict[str, tuple[str, Path]] = {}
+    for read in reads:
+        name = sample_name(read)
+        code = sample_code(name)
+        if code in samples:
+            other = samples[code][1]
+            raise RuntimeError(
+                f"Multiple FASTQ files resolve to sample code {code}: {other} and {read}. "
+                "Select one run with --sample or exclude one in config/params.yaml."
+            )
+        samples[code] = (name, read)
+
     if not dry_run:
+        work_dir.mkdir(parents=True, exist_ok=True)
         gfa_dir.mkdir(parents=True, exist_ok=True)
 
     ran = skipped = 0
-    for read in reads:
-        name = sample_name(read)
-        prefix = gfa_dir / f"02_{name}.asm"
-        marker = Path(f"{prefix}.bp.p_ctg.gfa")
+    for code, (name, read) in sorted(samples.items()):
+        prefix = work_dir / f"02_{name}.asm"
+        marker = gfa_dir / f"{code}_p_ctg.gfa"
         if completed(marker) and not force:
-            print(f"[skip] {name}: complete GFA exists ({marker})")
+            print(f"[skip] {code}: complete GFA exists ({marker})")
             skipped += 1
             continue
         run([hifiasm, "-o", prefix, "-t", str(threads), read], dry_run=dry_run)
+        if not dry_run:
+            expose_primary_gfas(prefix, gfa_dir, code, force=force)
         ran += 1
     return ran, skipped
 
 
+def expose_primary_gfas(prefix: Path, gfa_dir: Path, code: str, *, force: bool) -> None:
+    """Expose hifiasm primary-contig outputs under stable, short result names."""
+    for suffix, assembly_type in RAW_GFA_SUFFIXES.items():
+        source = Path(f"{prefix}{suffix}")
+        destination = gfa_dir / f"{code}_{assembly_type}.gfa"
+        if not completed(source):
+            raise RuntimeError(f"Expected hifiasm output was not produced: {source}")
+        if destination.exists() or destination.is_symlink():
+            if not force:
+                raise FileExistsError(f"Refusing to replace existing GFA: {destination}")
+            destination.unlink()
+        destination.symlink_to(source.resolve())
+
+
 def parse_gfa(path: Path) -> tuple[str, str] | None:
-    if not path.name.startswith("02_"):
-        return None
-    for suffix, assembly_type in GFA_SUFFIXES.items():
+    for suffix, assembly_type in NORMALIZED_GFA_SUFFIXES.items():
         if path.name.endswith(suffix):
-            return path.name[3 : -len(suffix)], assembly_type
+            return path.name[: -len(suffix)], assembly_type
     return None
 
 
@@ -151,7 +191,7 @@ def convert(
         raise FileNotFoundError(f"GFA directory does not exist: {gfa_dir}")
     gfas = [
         (path, parsed)
-        for path in sorted(gfa_dir.glob("*.p_ctg.gfa"))
+        for path in sorted(gfa_dir.glob("*.gfa"))
         if (parsed := parse_gfa(path)) is not None
         and selected(parsed[0], include, exclude)
     ]
@@ -162,7 +202,7 @@ def convert(
 
     ran = skipped = 0
     for gfa, (name, assembly_type) in gfas:
-        fasta = fasta_dir / f"03_{name}_{assembly_type}.fasta"
+        fasta = fasta_dir / f"{name}_{assembly_type}.fasta"
         if completed(fasta) and not force:
             print(f"[skip] {name}/{assembly_type}: FASTA exists ({fasta})")
             skipped += 1
@@ -201,12 +241,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--paths", default="config/paths.yaml", help="Path configuration YAML.")
     parser.add_argument("--params", default="config/params.yaml", help="Parameter YAML.")
     parser.add_argument("--reads", type=Path, help="Override inputs.hifi_reads.")
+    parser.add_argument("--work-output", type=Path, help="Override assembly.hifiasm_work.")
     parser.add_argument("--gfa-output", type=Path, help="Override assembly.hifiasm_gfa.")
     parser.add_argument("--fasta-output", type=Path, help="Override assembly.fasta.")
     parser.add_argument("--threads", type=int, help="Override assembly.hifiasm_threads.")
     parser.add_argument(
         "--sample", action="append", default=[], metavar="TEXT",
-        help="Only process filenames containing TEXT; repeat to select multiple samples.",
+        help="Only process sample codes containing TEXT; repeat to select multiple samples.",
     )
     parser.add_argument(
         "--exclude", action="append", default=[], metavar="TEXT",
@@ -224,6 +265,10 @@ def main() -> int:
         params = load_yaml(project_path(args.params))
 
         reads_dir = project_path(args.reads or config_value(paths, "inputs.hifi_reads"))
+        work_dir = project_path(
+            args.work_output
+            or config_value(paths, "assembly.hifiasm_work", "work/assembly/hifiasm")
+        )
         gfa_dir = project_path(args.gfa_output or config_value(paths, "assembly.hifiasm_gfa"))
         fasta_dir = project_path(args.fasta_output or config_value(paths, "assembly.fasta"))
         threads = args.threads or int(config_value(params, "assembly.hifiasm_threads", 32))
@@ -236,6 +281,7 @@ def main() -> int:
         if args.step in {"assemble", "all"}:
             ran, skipped = assemble(
                 reads_dir=reads_dir,
+                work_dir=work_dir,
                 gfa_dir=gfa_dir,
                 hifiasm=executable_path(config_value(paths, "software.hifiasm")),
                 threads=threads,
@@ -262,7 +308,14 @@ def main() -> int:
         action = "would run" if args.dry_run else "ran"
         print(f"[summary] {action}: {total_ran}; skipped existing: {total_skipped}")
         return 0
-    except (FileNotFoundError, KeyError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
+    except (
+        FileExistsError,
+        FileNotFoundError,
+        KeyError,
+        RuntimeError,
+        ValueError,
+        subprocess.CalledProcessError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

@@ -4,8 +4,8 @@
 Aligned BAMs are discovered from the configured T2T input directory and mapped
 to canonical sample codes through ``config/samples.tsv``. Final results contain
 PASS variants with ``|SVLEN| >= minimum_size`` when SVLEN is defined; BND calls
-without an SVLEN are retained by svpack. Outputs are sorted, bgzip-compressed,
-tabix-indexed, and named ``<sample>.vcf.gz``.
+without an SVLEN are retained by svpack. Published outputs are organized into
+``signatures/``, ``prefilter/``, and ``filtered/`` stage directories.
 """
 
 from __future__ import annotations
@@ -107,9 +107,18 @@ def find_bams(
     return selected
 
 
-def output_paths(output_dir: Path, sample: str) -> tuple[Path, Path]:
-    vcf = output_dir / f"{sample}.vcf.gz"
-    return vcf, Path(f"{vcf}.tbi")
+def output_paths(output_dir: Path, sample: str) -> tuple[Path, Path, Path, Path]:
+    """Return the published signature, prefilter VCF, filtered VCF, and index."""
+    compressed_signature = output_dir / "signatures" / f"{sample}.svsig.gz"
+    uncompressed_signature = output_dir / "signatures" / f"{sample}.svsig"
+    signature = (
+        uncompressed_signature
+        if completed(uncompressed_signature) and not completed(compressed_signature)
+        else compressed_signature
+    )
+    prefilter_vcf = output_dir / "prefilter" / f"{sample}.vcf"
+    filtered_vcf = output_dir / "filtered" / f"{sample}.vcf.gz"
+    return signature, prefilter_vcf, filtered_vcf, Path(f"{filtered_vcf}.tbi")
 
 
 def prepare_for_replacement(path: Path, *, force: bool, dry_run: bool) -> None:
@@ -136,58 +145,70 @@ def call_sample(
     dry_run: bool,
 ) -> bool:
     """Run missing stages for one sample; return True when work is planned/run."""
-    final_vcf, final_index = output_paths(output_dir, sample)
-    if not force and completed(final_vcf):
-        if completed(final_index):
-            print(f"[skip] {sample}: complete pbsv output exists ({final_vcf})")
-            return False
-        run([tabix, "-f", "-p", "vcf", final_vcf], dry_run=dry_run)
-        return True
+    signature, prefilter_vcf, final_vcf, final_index = output_paths(output_dir, sample)
+    temporary_filtered_vcf = work_dir / "filtered" / f"{sample}.vcf"
+    published = (signature, prefilter_vcf, final_vcf, final_index)
+    if not force and all(completed(path) for path in published):
+        print(f"[skip] {sample}: all published pbsv stages exist ({output_dir})")
+        return False
 
-    signature = work_dir / "signatures" / f"{sample}.svsig.gz"
-    raw_vcf = work_dir / "raw" / f"{sample}.vcf"
-    filtered_vcf = work_dir / "filtered" / f"{sample}.vcf"
-    paths_to_prepare = (signature, raw_vcf, filtered_vcf, final_vcf, final_index)
+    paths_to_prepare = (*published, temporary_filtered_vcf)
     for path in paths_to_prepare:
         prepare_for_replacement(path, force=force, dry_run=dry_run)
         if not dry_run:
             path.parent.mkdir(parents=True, exist_ok=True)
 
-    if completed(filtered_vcf):
-        print(f"[skip] {sample}: filtered VCF exists ({filtered_vcf})")
+    changed = False
+    if completed(signature):
+        print(f"[skip] {sample}: signature exists ({signature})")
     else:
-        if completed(raw_vcf):
-            print(f"[skip] {sample}: raw VCF exists ({raw_vcf})")
+        run(
+            [
+                pbsv,
+                "discover",
+                "--sample",
+                sample,
+                "--tandem-repeats",
+                tandem_repeats,
+                bam,
+                signature,
+            ],
+            dry_run=dry_run,
+        )
+        changed = True
+
+    if completed(prefilter_vcf):
+        print(f"[skip] {sample}: prefilter VCF exists ({prefilter_vcf})")
+    else:
+        run(
+            [pbsv, "call", "--num-threads", threads, reference, signature, prefilter_vcf],
+            dry_run=dry_run,
+        )
+        changed = True
+
+    if completed(final_vcf):
+        print(f"[skip] {sample}: filtered VCF exists ({final_vcf})")
+    else:
+        if completed(temporary_filtered_vcf):
+            print(f"[skip] {sample}: temporary filtered VCF exists ({temporary_filtered_vcf})")
         else:
-            if not completed(signature):
-                run(
-                    [
-                        pbsv,
-                        "discover",
-                        "--sample",
-                        sample,
-                        "--tandem-repeats",
-                        tandem_repeats,
-                        bam,
-                        signature,
-                    ],
-                    dry_run=dry_run,
-                )
-            else:
-                print(f"[skip] {sample}: signature exists ({signature})")
             run(
-                [pbsv, "call", "--num-threads", threads, reference, signature, raw_vcf],
+                [svpack, "filter", "--pass-only", "--min-svlen", minimum_size, prefilter_vcf],
+                stdout=temporary_filtered_vcf,
                 dry_run=dry_run,
             )
         run(
-            [svpack, "filter", "--pass-only", "--min-svlen", minimum_size, raw_vcf],
-            stdout=filtered_vcf,
+            [bcftools, "sort", "-Oz", "-o", final_vcf, temporary_filtered_vcf],
             dry_run=dry_run,
         )
+        changed = True
 
-    run([bcftools, "sort", "-Oz", "-o", final_vcf, filtered_vcf], dry_run=dry_run)
-    run([tabix, "-f", "-p", "vcf", final_vcf], dry_run=dry_run)
-    return True
+    if completed(final_index):
+        print(f"[skip] {sample}: filtered VCF index exists ({final_index})")
+    else:
+        run([tabix, "-f", "-p", "vcf", final_vcf], dry_run=dry_run)
+        changed = True
+    return changed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -201,8 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--paths", default="config/paths.yaml", help="Path configuration YAML.")
     parser.add_argument("--params", default="config/params.yaml", help="Parameter YAML.")
     parser.add_argument("--input", type=Path, help="Override inputs.aligned_bams.")
-    parser.add_argument("--output", type=Path, help="Override the pbsv final-result root.")
-    parser.add_argument("--work-output", type=Path, help="Override the pbsv intermediate-work root.")
+    parser.add_argument("--output", type=Path, help="Override the published pbsv stage root.")
+    parser.add_argument("--work-output", type=Path, help="Override the temporary filtering-work root.")
     parser.add_argument("--reference", type=Path, help="Override references.fasta.")
     parser.add_argument("--reference-name", help="Reference-specific output parent name.")
     parser.add_argument("--threads", type=int, help="Override structural_variants.threads.")

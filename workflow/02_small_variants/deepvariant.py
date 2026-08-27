@@ -33,6 +33,49 @@ def complete(path):
     return path.is_file() and path.stat().st_size > 0
 
 
+def run(command):
+    print("Running:", " ".join(map(str, command)), flush=True)
+    subprocess.run([str(value) for value in command], check=True)
+
+
+def pass_filter_complete(vcf):
+    index = Path(f"{vcf}.tbi")
+    marker = Path(f"{vcf}.pass_only.done")
+    return (
+        complete(vcf)
+        and complete(index)
+        and marker.is_file()
+        and marker.stat().st_mtime_ns >= vcf.stat().st_mtime_ns
+    )
+
+
+def keep_pass_variants(config, vcf):
+    """Atomically replace a VCF with its PASS records and rebuild its index."""
+    temporary_vcf = vcf.with_name(f".{vcf.name}.pass.tmp.vcf.gz")
+    temporary_index = Path(f"{temporary_vcf}.tbi")
+    final_index = Path(f"{vcf}.tbi")
+    marker = Path(f"{vcf}.pass_only.done")
+
+    for stale_path in (temporary_vcf, temporary_index):
+        stale_path.unlink(missing_ok=True)
+
+    run([
+        config.get("bcftools", "bcftools"), "view",
+        "--apply-filters", "PASS",
+        "--output-type", "z",
+        "--output", temporary_vcf,
+        vcf,
+    ])
+    run([
+        config.get("tabix", "tabix"), "--force", "--preset", "vcf",
+        temporary_vcf,
+    ])
+    temporary_vcf.replace(vcf)
+    temporary_index.replace(final_index)
+    marker.write_text("FILTER=PASS\n", encoding="utf-8")
+    print(f"Kept PASS variants and removed RefCall records: {vcf}")
+
+
 def main():
     config = load_config()
     aligned_bams = path_value(config, "aligned_bams").resolve()
@@ -52,26 +95,27 @@ def main():
         sample = sample_id(bam.name)
         vcf = output_dir / f"{sample}.vcf.gz"
         gvcf = output_dir / f"{sample}.g.vcf.gz"
-        if complete(vcf):
+        if pass_filter_complete(vcf):
             print(f"Skipping completed sample: {sample}")
             continue
 
-        command = [
-            config.get("docker", "docker"), "run", "--rm",
-            "-v", f"{aligned_bams}:/input:ro",
-            "-v", f"{reference.parent}:/reference:ro",
-            "-v", f"{output_dir}:/output",
-            config.get("image", "google/deepvariant:1.8.0"),
-            "/opt/deepvariant/bin/run_deepvariant",
-            f"--model_type={config.get('model_type', 'PACBIO')}",
-            f"--ref=/reference/{reference.name}",
-            f"--reads=/input/{bam.name}",
-            f"--output_vcf=/output/{vcf.name}",
-            f"--output_gvcf=/output/{gvcf.name}",
-            f"--num_shards={config.get('threads', 32)}",
-        ]
-        print("Running:", " ".join(command), flush=True)
-        subprocess.run(command, check=True)
+        if not complete(vcf):
+            run([
+                config.get("docker", "docker"), "run", "--rm",
+                "-v", f"{aligned_bams}:/input:ro",
+                "-v", f"{reference.parent}:/reference:ro",
+                "-v", f"{output_dir}:/output",
+                config.get("image", "google/deepvariant:1.8.0"),
+                "/opt/deepvariant/bin/run_deepvariant",
+                f"--model_type={config.get('model_type', 'PACBIO')}",
+                f"--ref=/reference/{reference.name}",
+                f"--reads=/input/{bam.name}",
+                f"--output_vcf=/output/{vcf.name}",
+                f"--output_gvcf=/output/{gvcf.name}",
+                f"--num_shards={config.get('threads', 32)}",
+            ])
+
+        keep_pass_variants(config, vcf)
 
 
 if __name__ == "__main__":

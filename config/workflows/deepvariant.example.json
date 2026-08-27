@@ -4,6 +4,8 @@
   "reference_name": "t2t",
   "output_dir": "results/snvs",
   "docker": "docker",
+  "bcftools": "bcftools",
+  "tabix": "tabix",
   "image": "google/deepvariant:1.8.0",
   "model_type": "PACBIO",
   "threads": 32,

@@ -1,0 +1,11 @@
+{
+  "assemblies_dir": "/path/to/scaffolded_assemblies",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "reference_name": "t2t",
+  "output_dir": "results/sv/dipcall",
+  "dipcall": "/path/to/run-dipcall",
+  "threads": 32,
+  "make_jobs": 2,
+  "haplotype_1_suffix": "hap1.fa",
+  "haplotype_2_suffix": "hap2.fa"
+}

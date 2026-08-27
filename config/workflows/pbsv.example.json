@@ -1,0 +1,12 @@
+{
+  "aligned_bams": "/path/to/aligned_bams/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "tandem_repeats": "/path/to/tandem_repeats.bed",
+  "reference_name": "t2t",
+  "output_dir": "results/sv/pbsv",
+  "pbsv": "/path/to/pbsv",
+  "svpack": "/path/to/svpack",
+  "threads": 32,
+  "minimum_sv_length": 50,
+  "exclude_name_patterns": []
+}

@@ -1,0 +1,11 @@
+{
+  "small_variants": "/path/to/filtered_small_variants",
+  "aligned_bams": "/path/to/aligned_bams/t2t",
+  "structural_variants": "/path/to/filtered_structural_variants/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "output_dir": "results/phasing",
+  "hiphase": "/path/to/hiphase",
+  "threads": 32,
+  "sv_suffix": ".vcf.gz",
+  "small_vcf_glob": "*.vcf.gz"
+}

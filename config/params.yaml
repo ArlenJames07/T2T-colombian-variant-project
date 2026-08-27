@@ -1,0 +1,53 @@
+reference_build: T2T-CHM13v2.0
+threads: 32
+
+assembly:
+  hifiasm_threads: 32
+  # Excluded alternate run; prevents resume mode from recreating removed outputs.
+  exclude_name_patterns:
+    - bc2044v2
+  ragtag_threads: 32
+  # Default chromosome-only output: human autosomes and sex chromosomes (no chrM).
+  ragtag_chromosome_regex: '^chr(?:[1-9]|1[0-9]|2[0-2]|X|Y)$'
+  ragtag:
+    minimum_unique_alignment: 1000
+    minimum_mapq: 10
+    maximum_merge_distance: 100000
+    minimum_grouping_confidence: 0.2
+    minimum_location_confidence: 0.0
+    minimum_orientation_confidence: 0.0
+  quast_threads: 32
+  busco_lineage: primates_odb12
+
+small_variants:
+  deepvariant_image: google/deepvariant:1.8.0
+  model_type: PACBIO
+  threads: 32
+  exclude_name_patterns:
+    - bc2044v2
+
+structural_variants:
+  threads: 32
+  minimum_size: 50
+  # Excluded alternate run; prevents duplicate 002P outputs.
+  exclude_name_patterns:
+    - bc2044v2
+  cute_sv_min_support: 3
+  # The completed cuteSV run contains study samples only, not references.
+  cutesv_exclude_name_patterns:
+    - bc2020
+    - bc2021
+    - bc2022
+    - bc2024
+  survivor_breakpoint_distance: 1000
+  survivor_minimum_callers: 2
+
+phasing:
+  threads: 32
+
+methylation:
+  threads: 32
+  minimum_coverage: 10
+
+integration:
+  breakpoint_window_bp: 100000

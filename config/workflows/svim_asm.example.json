@@ -1,0 +1,13 @@
+{
+  "assemblies_dir": "/path/to/scaffolded_assemblies",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "reference_name": "t2t",
+  "output_dir": "results/sv/svim_asm",
+  "minimap2": "minimap2",
+  "samtools": "samtools",
+  "svim_asm": "svim-asm",
+  "threads": 32,
+  "sort_threads": 4,
+  "sort_memory": "4G",
+  "assembly_suffix": "_p_ctg.fa"
+}

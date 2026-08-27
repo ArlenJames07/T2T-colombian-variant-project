@@ -1,0 +1,12 @@
+{
+  "phased_bams": "/path/to/phased_bams/t2t",
+  "small_variants": "/path/to/phased_small_variants/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "excluded_regions": "/path/to/cnv.exclude.bed",
+  "reference_name": "t2t",
+  "output_dir": "results/sv/hifi_cnv",
+  "hificnv": "hificnv",
+  "threads": 32,
+  "bam_suffix": ".bam",
+  "small_vcf_suffix": ".small.vcf.gz"
+}

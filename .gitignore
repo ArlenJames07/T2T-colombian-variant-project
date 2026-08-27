@@ -2,6 +2,8 @@
 # Local configuration
 # ==================================================
 config/config.local.yaml
+config/paths.yaml
+config/workflows/*.local.json
 .env
 .env.*
 !.env.example
@@ -10,7 +12,7 @@ config/config.local.yaml
 # Raw sequencing files
 # ==================================================
 data/raw_reads/*
-!data/raw_reads/.gitkeep
+data/raw_reads
 
 *.bam
 *.bai
@@ -28,6 +30,7 @@ data/raw_reads/*
 # Reference genomes and indexes
 # ==================================================
 resources/references/
+resources/reference/current
 *.fa
 *.fasta
 *.fna

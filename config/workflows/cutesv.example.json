@@ -1,0 +1,15 @@
+{
+  "aligned_bams": "/path/to/aligned_bams/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "reference_name": "t2t",
+  "output_dir": "results/sv/cutesv",
+  "cutesv": "cuteSV",
+  "threads": 32,
+  "minimum_support": 3,
+  "minimum_sv_length": 50,
+  "max_cluster_bias_ins": 1000,
+  "diff_ratio_merging_ins": 0.9,
+  "max_cluster_bias_del": 1000,
+  "diff_ratio_merging_del": 0.5,
+  "exclude_name_patterns": []
+}

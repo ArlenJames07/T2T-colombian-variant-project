@@ -1,0 +1,17 @@
+{
+  "raw_bams": "/path/to/raw_bams",
+  "fastq_dir": "/path/to/hifi_fastq",
+  "output_dir": "results/assemblies",
+  "pbindex": "/path/to/pbindex",
+  "bam2fastq": "/path/to/bam2fastq",
+  "hifiasm": "/path/to/hifiasm",
+  "gfatools": "/path/to/gfatools",
+  "threads": 32,
+  "index_bams": false,
+  "convert_bams": false,
+  "assemble": true,
+  "convert_gfa": true,
+  "fastq_suffix": ".fastq.gz",
+  "exclude_name_patterns": [],
+  "sample_aliases": {}
+}

@@ -1,0 +1,11 @@
+{
+  "phased_bams": "/path/to/phased_bams/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "excluded_regions": "/path/to/cnv.exclude.bed",
+  "output_dir": "results/sv/sawfish",
+  "sawfish": "sawfish",
+  "bcftools": "bcftools",
+  "tabix": "tabix",
+  "threads": 32,
+  "split_joint_vcfs": true
+}

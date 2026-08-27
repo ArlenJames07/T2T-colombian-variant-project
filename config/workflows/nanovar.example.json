@@ -1,0 +1,13 @@
+{
+  "hifi_reads": "/path/to/hifi_fastq",
+  "reference_fasta": "/path/to/reference.fasta",
+  "reference_name": "t2t",
+  "result_subdir": "t2t",
+  "output_dir": "results/sv/nanovar",
+  "nanovar": "nanovar",
+  "threads": 32,
+  "minimum_sv_length": 50,
+  "read_type": "pacbio-ccs",
+  "annotate_insertions": "human",
+  "fastq_suffix": ".fastq.gz"
+}

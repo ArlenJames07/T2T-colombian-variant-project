@@ -1,0 +1,11 @@
+{
+  "aligned_bams": "/path/to/aligned_bams/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "reference_name": "t2t",
+  "output_dir": "results/snvs",
+  "docker": "docker",
+  "image": "google/deepvariant:1.8.0",
+  "model_type": "PACBIO",
+  "threads": 32,
+  "exclude_name_patterns": []
+}

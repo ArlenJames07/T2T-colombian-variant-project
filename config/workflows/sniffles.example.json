@@ -1,0 +1,10 @@
+{
+  "aligned_bams": "/path/to/aligned_bams/t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "reference_name": "t2t",
+  "tandem_repeats": "/path/to/tandem_repeats.bed",
+  "output_dir": "results/sv/sniffles",
+  "sniffles": "sniffles",
+  "threads": 32,
+  "exclude_name_patterns": []
+}

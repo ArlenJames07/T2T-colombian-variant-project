@@ -1,0 +1,10 @@
+{
+  "assemblies_dir": "/path/to/assembly_fastas",
+  "reference_name": "t2t",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "output_dir": "results/assemblies/scaffolds",
+  "ragtag": "/path/to/ragtag.py",
+  "threads": 32,
+  "fasta_suffix": ".fasta",
+  "sample_aliases": {}
+}

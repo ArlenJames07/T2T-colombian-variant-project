@@ -5,7 +5,9 @@
   "reference_fasta": "/path/to/chm13v2.0.fasta",
   "output_dir": "results/phasing",
   "hiphase": "/path/to/hiphase",
+  "bcftools": "bcftools",
+  "tabix": "tabix",
   "threads": 32,
   "sv_suffix": ".vcf.gz",
-  "small_vcf_glob": "*.vcf.gz"
+  "small_vcf_glob": "*.vcf"
 }

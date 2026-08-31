@@ -4,11 +4,13 @@
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILE = PROJECT_ROOT / "config" / "workflows" / "pbsv.local.json"
+MAX_CONCURRENT_FILES = 4
 
 
 def load_config():
@@ -86,6 +88,38 @@ def filter_and_prepare_vcf(config, raw_vcf, filtered_vcf, compressed_vcf):
     print(f"Prepared HiPhase inputs: {filtered_vcf}, {compressed_vcf}, {index}")
 
 
+def process_bam(config, bam, reference, repeats, signatures, raw_dir, filtered_dir):
+    """Run the complete pbsv workflow for one BAM file."""
+    sample = sample_id(bam.name)
+    signature = signatures / f"{sample}.svsig.gz"
+    raw_vcf = raw_dir / f"{sample}.vcf"
+    filtered_vcf = filtered_dir / f"{sample}.vcf"
+    compressed_filtered = filtered_dir / f"{sample}.vcf.gz"
+    compressed_index = Path(f"{compressed_filtered}.tbi")
+
+    if filtered_outputs_complete(
+        raw_vcf, filtered_vcf, compressed_filtered, compressed_index
+    ):
+        print(f"Skipping completed sample: {sample}")
+        return
+    if not complete(raw_vcf):
+        if not complete(signature):
+            run([
+                config["pbsv"], "discover", bam, signature,
+                "--tandem-repeats", repeats,
+            ])
+        else:
+            print(f"Skipping signature discovery: {sample}")
+        run([
+            config["pbsv"], "call", reference, signature,
+            "-j", config["threads"], raw_vcf,
+        ])
+    else:
+        print(f"Skipping existing pbsv call: {sample}")
+
+    filter_and_prepare_vcf(config, raw_vcf, filtered_vcf, compressed_filtered)
+
+
 def main():
     config = load_config()
     bams = path_value(config, "aligned_bams")
@@ -104,32 +138,30 @@ def main():
         directory.mkdir(parents=True, exist_ok=True)
 
     excluded = config.get("exclude_name_patterns", [])
+    input_bams = []
     for bam in sorted(bams.glob("*.bam")):
         if any(pattern in bam.name for pattern in excluded):
             print(f"Skipping excluded input: {bam.name}")
-            continue
-        sample = sample_id(bam.name)
-        signature = signatures / f"{sample}.svsig.gz"
-        raw_vcf = raw_dir / f"{sample}.vcf"
-        filtered_vcf = filtered_dir / f"{sample}.vcf"
-        compressed_filtered = filtered_dir / f"{sample}.vcf.gz"
-        compressed_index = Path(f"{compressed_filtered}.tbi")
-
-        if filtered_outputs_complete(
-            raw_vcf, filtered_vcf, compressed_filtered, compressed_index
-        ):
-            print(f"Skipping completed sample: {sample}")
-            continue
-        if not complete(raw_vcf):
-            if not complete(signature):
-                run([config["pbsv"], "discover", bam, signature, "--tandem-repeats", repeats])
-            else:
-                print(f"Skipping signature discovery: {sample}")
-            run([config["pbsv"], "call", reference, signature, "-j", config["threads"], raw_vcf])
         else:
-            print(f"Skipping existing pbsv call: {sample}")
+            input_bams.append(bam)
 
-        filter_and_prepare_vcf(config, raw_vcf, filtered_vcf, compressed_filtered)
+    print(f"Processing up to {MAX_CONCURRENT_FILES} BAM files concurrently")
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_FILES) as executor:
+        futures = [
+            executor.submit(
+                process_bam,
+                config,
+                bam,
+                reference,
+                repeats,
+                signatures,
+                raw_dir,
+                filtered_dir,
+            )
+            for bam in input_bams
+        ]
+        for future in futures:
+            future.result()
 
 
 if __name__ == "__main__":

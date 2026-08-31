@@ -39,6 +39,51 @@ def complete(path):
     return path.is_file() and path.stat().st_size > 0
 
 
+def run(command):
+    print("Running:", " ".join(map(str, command)), flush=True)
+    subprocess.run([str(value) for value in command], check=True)
+
+
+def prepare_small_vcf(config, source_vcf, compressed_dir):
+    """Return a BGZF-compressed, indexed VCF suitable for HiPhase."""
+    if source_vcf.name.endswith(".vcf.gz"):
+        return source_vcf
+
+    compressed_vcf = compressed_dir / f"{source_vcf.name}.gz"
+    compressed_index = Path(f"{compressed_vcf}.tbi")
+    if (
+        complete(compressed_vcf)
+        and complete(compressed_index)
+        and compressed_vcf.stat().st_mtime_ns >= source_vcf.stat().st_mtime_ns
+        and compressed_index.stat().st_mtime_ns >= compressed_vcf.stat().st_mtime_ns
+    ):
+        return compressed_vcf
+
+    temporary_vcf = compressed_dir / f".{source_vcf.name}.tmp.vcf.gz"
+    temporary_index = Path(f"{temporary_vcf}.tbi")
+    for stale_path in (temporary_vcf, temporary_index):
+        stale_path.unlink(missing_ok=True)
+
+    try:
+        run([
+            config.get("bcftools", "bcftools"), "view", "--output-type", "z",
+            "--output", temporary_vcf, source_vcf,
+        ])
+        run([
+            config.get("tabix", "tabix"), "--force", "--preset", "vcf",
+            temporary_vcf,
+        ])
+        temporary_vcf.replace(compressed_vcf)
+        temporary_index.replace(compressed_index)
+    except Exception:
+        temporary_vcf.unlink(missing_ok=True)
+        temporary_index.unlink(missing_ok=True)
+        raise
+
+    print(f"Prepared BGZF VCF for HiPhase: {compressed_vcf}")
+    return compressed_vcf
+
+
 def main():
     config = load_config()
     small_variants = path_value(config, "small_variants")
@@ -48,6 +93,7 @@ def main():
     output_root = path_value(config, "output_dir")
     bam_output = output_root / "bamfiles"
     variant_output = output_root / "variants"
+    compressed_input = output_root / "compressed_inputs"
     for label, directory in (
         ("small-variant", small_variants), ("aligned BAM", bams),
         ("structural-variant", structural_variants),
@@ -58,6 +104,7 @@ def main():
         raise FileNotFoundError(f"Reference FASTA does not exist: {reference}")
     bam_output.mkdir(parents=True, exist_ok=True)
     variant_output.mkdir(parents=True, exist_ok=True)
+    compressed_input.mkdir(parents=True, exist_ok=True)
 
     bam_by_sample = file_index(bams, "*.bam")
     small_by_sample = {}
@@ -81,17 +128,17 @@ def main():
             print(f"Skipping completed sample: {sample}")
             continue
 
+        hiphase_small_vcf = prepare_small_vcf(config, small_vcf, compressed_input)
         command = [
             config["hiphase"], "--threads", config.get("threads", 32),
             "--reference", reference, "--bam", bam, "--output-bam", phased_bam,
-            "--vcf", small_vcf, "--output-vcf", phased_small,
+            "--vcf", hiphase_small_vcf, "--output-vcf", phased_small,
             "--vcf", sv_vcf, "--output-vcf", phased_sv,
             "--stats-file", variant_output / f"{sample}.stats.csv",
             "--blocks-file", variant_output / f"{sample}.blocks.tsv",
             "--summary-file", variant_output / f"{sample}.summary.tsv",
         ]
-        print("Running:", " ".join(map(str, command)), flush=True)
-        subprocess.run([str(value) for value in command], check=True)
+        run(command)
 
 
 if __name__ == "__main__":

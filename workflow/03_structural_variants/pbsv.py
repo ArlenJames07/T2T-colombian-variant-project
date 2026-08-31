@@ -37,6 +37,55 @@ def run(command, stdout=None):
     subprocess.run([str(value) for value in command], check=True, stdout=stdout)
 
 
+def filtered_outputs_complete(raw_vcf, filtered_vcf, compressed_vcf, index):
+    """Return True when all filtered outputs required by HiPhase are current."""
+    return (
+        complete(raw_vcf)
+        and complete(filtered_vcf)
+        and complete(compressed_vcf)
+        and complete(index)
+        and filtered_vcf.stat().st_mtime_ns >= raw_vcf.stat().st_mtime_ns
+        and compressed_vcf.stat().st_mtime_ns >= filtered_vcf.stat().st_mtime_ns
+        and index.stat().st_mtime_ns >= compressed_vcf.stat().st_mtime_ns
+    )
+
+
+def filter_and_prepare_vcf(config, raw_vcf, filtered_vcf, compressed_vcf):
+    """Filter SVs and create plain, BGZF-compressed, and indexed VCF outputs."""
+    index = Path(f"{compressed_vcf}.tbi")
+    temporary_vcf = filtered_vcf.with_name(f".{filtered_vcf.stem}.tmp.vcf")
+    temporary_compressed = compressed_vcf.with_name(
+        f".{filtered_vcf.stem}.tmp.vcf.gz"
+    )
+    temporary_index = Path(f"{temporary_compressed}.tbi")
+    for temporary in (temporary_vcf, temporary_compressed, temporary_index):
+        temporary.unlink(missing_ok=True)
+
+    try:
+        with temporary_vcf.open("wb") as output:
+            run([
+                config["svpack"], "filter", "--pass-only", "--min-svlen",
+                config.get("minimum_sv_length", 50), raw_vcf,
+            ], stdout=output)
+        run([
+            config.get("bcftools", "bcftools"), "view", "--output-type", "z",
+            "--output", temporary_compressed, temporary_vcf,
+        ])
+        run([
+            config.get("tabix", "tabix"), "--force", "--preset", "vcf",
+            temporary_compressed,
+        ])
+        temporary_vcf.replace(filtered_vcf)
+        temporary_compressed.replace(compressed_vcf)
+        temporary_index.replace(index)
+    except Exception:
+        for temporary in (temporary_vcf, temporary_compressed, temporary_index):
+            temporary.unlink(missing_ok=True)
+        raise
+
+    print(f"Prepared HiPhase inputs: {filtered_vcf}, {compressed_vcf}, {index}")
+
+
 def main():
     config = load_config()
     bams = path_value(config, "aligned_bams")
@@ -64,8 +113,11 @@ def main():
         raw_vcf = raw_dir / f"{sample}.vcf"
         filtered_vcf = filtered_dir / f"{sample}.vcf"
         compressed_filtered = filtered_dir / f"{sample}.vcf.gz"
+        compressed_index = Path(f"{compressed_filtered}.tbi")
 
-        if complete(filtered_vcf) or complete(compressed_filtered):
+        if filtered_outputs_complete(
+            raw_vcf, filtered_vcf, compressed_filtered, compressed_index
+        ):
             print(f"Skipping completed sample: {sample}")
             continue
         if not complete(raw_vcf):
@@ -77,13 +129,7 @@ def main():
         else:
             print(f"Skipping existing pbsv call: {sample}")
 
-        temporary = filtered_vcf.with_suffix(".vcf.tmp")
-        with temporary.open("wb") as output:
-            run([
-                config["svpack"], "filter", "--pass-only", "--min-svlen",
-                config.get("minimum_sv_length", 50), raw_vcf,
-            ], stdout=output)
-        temporary.replace(filtered_vcf)
+        filter_and_prepare_vcf(config, raw_vcf, filtered_vcf, compressed_filtered)
 
 
 if __name__ == "__main__":

@@ -38,42 +38,48 @@ def run(command):
     subprocess.run([str(value) for value in command], check=True)
 
 
-def pass_filter_complete(vcf):
-    index = Path(f"{vcf}.tbi")
-    marker = Path(f"{vcf}.pass_only.done")
+def pass_filter_complete(source_vcf, filtered_vcf, compressed_filtered_vcf):
+    """Return True when both PASS-only VCF outputs are current."""
     return (
-        complete(vcf)
-        and complete(index)
-        and marker.is_file()
-        and marker.stat().st_mtime_ns >= vcf.stat().st_mtime_ns
+        complete(source_vcf)
+        and complete(filtered_vcf)
+        and complete(compressed_filtered_vcf)
+        and filtered_vcf.stat().st_mtime_ns >= source_vcf.stat().st_mtime_ns
+        and compressed_filtered_vcf.stat().st_mtime_ns >= source_vcf.stat().st_mtime_ns
     )
 
 
-def keep_pass_variants(config, vcf):
-    """Atomically replace a VCF with its PASS records and rebuild its index."""
-    temporary_vcf = vcf.with_name(f".{vcf.name}.pass.tmp.vcf.gz")
-    temporary_index = Path(f"{temporary_vcf}.tbi")
-    final_index = Path(f"{vcf}.tbi")
-    marker = Path(f"{vcf}.pass_only.done")
+def keep_pass_variants(config, source_vcf, filtered_vcf, compressed_filtered_vcf):
+    """Write PASS records as plain and compressed VCFs without changing the source."""
+    temporary_vcf = filtered_vcf.with_name(f".{filtered_vcf.name}.tmp")
+    temporary_compressed_vcf = compressed_filtered_vcf.with_name(
+        f".{compressed_filtered_vcf.name}.tmp"
+    )
+    for temporary in (temporary_vcf, temporary_compressed_vcf):
+        temporary.unlink(missing_ok=True)
 
-    for stale_path in (temporary_vcf, temporary_index):
-        stale_path.unlink(missing_ok=True)
+    try:
+        run([
+            config.get("bcftools", "bcftools"), "view",
+            "--apply-filters", "PASS",
+            "--output-type", "v",
+            "--output", temporary_vcf,
+            source_vcf,
+        ])
+        run([
+            config.get("bcftools", "bcftools"), "view",
+            "--output-type", "z",
+            "--output", temporary_compressed_vcf,
+            temporary_vcf,
+        ])
+        temporary_vcf.replace(filtered_vcf)
+        temporary_compressed_vcf.replace(compressed_filtered_vcf)
+    except Exception:
+        for temporary in (temporary_vcf, temporary_compressed_vcf):
+            temporary.unlink(missing_ok=True)
+        raise
 
-    run([
-        config.get("bcftools", "bcftools"), "view",
-        "--apply-filters", "PASS",
-        "--output-type", "z",
-        "--output", temporary_vcf,
-        vcf,
-    ])
-    run([
-        config.get("tabix", "tabix"), "--force", "--preset", "vcf",
-        temporary_vcf,
-    ])
-    temporary_vcf.replace(vcf)
-    temporary_index.replace(final_index)
-    marker.write_text("FILTER=PASS\n", encoding="utf-8")
-    print(f"Kept PASS variants and removed RefCall records: {vcf}")
+    print(f"Saved PASS-only variants: {filtered_vcf}, {compressed_filtered_vcf}")
 
 
 def main():
@@ -86,6 +92,8 @@ def main():
     if not reference.is_file():
         raise FileNotFoundError(f"Reference FASTA does not exist: {reference}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    filtered_dir = output_dir / "filtered"
+    filtered_dir.mkdir(exist_ok=True)
 
     excluded = config.get("exclude_name_patterns", [])
     for bam in sorted(aligned_bams.glob("*.bam")):
@@ -95,8 +103,10 @@ def main():
         sample = sample_id(bam.name)
         vcf = output_dir / f"{sample}.vcf.gz"
         gvcf = output_dir / f"{sample}.g.vcf.gz"
-        if pass_filter_complete(vcf):
-            print(f"Skipping completed sample: {sample}")
+        filtered_vcf = filtered_dir / f"{sample}.vcf"
+        compressed_filtered_vcf = filtered_dir / f"{sample}.vcf.gz"
+        if pass_filter_complete(vcf, filtered_vcf, compressed_filtered_vcf):
+            print(f"Skipping completed PASS-only VCF: {sample}")
             continue
 
         if not complete(vcf):
@@ -115,7 +125,7 @@ def main():
                 f"--num_shards={config.get('threads', 32)}",
             ])
 
-        keep_pass_variants(config, vcf)
+        keep_pass_variants(config, vcf, filtered_vcf, compressed_filtered_vcf)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 # T2T Colombian Variant Project
 
 Reproducible workflows for PacBio HiFi assembly, small-variant calling,
-structural-variant calling, and phasing against T2T-CHM13v2.0.
+structural-variant calling, phasing, and CpG methylation calling against
+T2T-CHM13v2.0.
 
 The compute-intensive analyses were completed before this reorganization.
 Existing results are referenced locally under `results/`; this repository does
@@ -16,6 +17,7 @@ workflow/01_assembly/     hifiasm and RagTag
 workflow/02_small_variants/
 workflow/03_structural_variants/
 workflow/04_phasing/
+workflow/05_methylation/
 results/                  generated or locally linked results (Git-ignored)
 metadata/                 sample and cohort tables
 resources/                references and external resources
@@ -79,6 +81,12 @@ Phasing:
 python3 workflow/04_phasing/hiphase.py
 ```
 
+Methylation calling from phased BAMs:
+
+```bash
+python3 workflow/05_methylation/pbcpgtools.py
+```
+
 The structural-variant README distinguishes callers that use aligned reads,
 assemblies, or phased BAMs. HiFiCNV and Sawfish should be run only after the
 required phased inputs exist.
@@ -92,6 +100,7 @@ results/assemblies/
 results/snvs/
 results/sv/
 results/phasing/
+results/methylation/
 ```
 
 Do not add large outputs or local result links to Git. Because all of

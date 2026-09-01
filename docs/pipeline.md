@@ -19,6 +19,7 @@ only their `*.example.json` templates should be published.
 | SVIM-asm | `workflow/03_structural_variants/svim_asm.py` | `svim_asm.local.json` | `results/sv/svim_asm/` |
 | Sniffles | `workflow/03_structural_variants/sniffles.py` | `sniffles.local.json` | `results/sv/sniffles/` |
 | Phasing | `workflow/04_phasing/hiphase.py` | `hiphase.local.json` | `results/phasing/` |
+| Methylation | `workflow/05_methylation/pbcpgtools.py` | `pbcpgtools.local.json` | `results/methylation/` |
 
 Run any configured workflow directly from the repository root, for example:
 

@@ -14,3 +14,7 @@ python3 workflow/01_assembly/hifiasm.py
 
 All relative paths are resolved from the repository root. Every script skips a
 sample when its final non-empty output already exists.
+
+For methylation calling, copy `pbcpgtools.example.json` to
+`pbcpgtools.local.json`. Its default input directory is the phased BAM output at
+`results/phasing/bamfiles/`.

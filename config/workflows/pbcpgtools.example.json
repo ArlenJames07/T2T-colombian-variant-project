@@ -1,0 +1,15 @@
+{
+  "phased_bams": "results/phasing/bamfiles",
+  "output_dir": "results/methylation",
+  "pbcpgtools": "/path/to/pb-CpG-tools/bin/aligned_bam_to_cpg_scores",
+  "model": "/path/to/pb-CpG-tools/models/pileup_calling_model.v1.tflite",
+  "reference_fasta": "/path/to/chm13v2.0.fasta",
+  "threads": 32,
+  "pileup_mode": "model",
+  "modsites_mode": "denovo",
+  "minimum_coverage": 10,
+  "minimum_mapq": 1,
+  "haplotype_tag": "HP",
+  "require_haplotype_outputs": true,
+  "bam_suffix": ".bam"
+}

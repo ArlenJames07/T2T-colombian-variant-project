@@ -4,10 +4,6 @@ Reproducible workflows for PacBio HiFi assembly, small-variant calling,
 structural-variant calling, phasing, and CpG methylation calling against
 T2T-CHM13v2.0.
 
-The compute-intensive analyses were completed before this reorganization.
-Existing results are referenced locally under `results/`; this repository does
-not copy those large files and Git ignores the complete results tree. The new
-scripts can independently recreate missing outputs in the same project folders.
 
 ## Repository layout
 
@@ -18,7 +14,7 @@ workflow/02_small_variants/
 workflow/03_structural_variants/
 workflow/04_phasing/
 workflow/05_methylation/
-results/                  generated or locally linked results (Git-ignored)
+results/                  generated results 
 metadata/                 sample and cohort tables
 resources/                references and external resources
 docs/                     pipeline and analysis documentation
@@ -27,9 +23,7 @@ docs/                     pipeline and analysis documentation
 ## Configuration
 
 Every script automatically reads one matching `config/workflows/*.local.json`
-file. These local files contain the original machine-specific input paths and
-are ignored by Git. The corresponding `*.example.json` files contain only safe
-placeholder paths and are intended for the remote repository.
+file. 
 
 For example:
 
@@ -38,11 +32,6 @@ cp config/workflows/hifiasm.example.json config/workflows/hifiasm.local.json
 # Edit hifiasm.local.json, then run:
 python3 workflow/01_assembly/hifiasm.py
 ```
-
-No workflow accepts or requires command-line arguments. Relative paths in the
-JSON configuration are resolved from the repository root. Each workflow skips
-non-empty final outputs, making interrupted runs resumable without overwriting
-completed samples.
 
 ## Run the workflows
 
@@ -103,6 +92,3 @@ results/phasing/
 results/methylation/
 ```
 
-Do not add large outputs or local result links to Git. Because all of
-`results/` except its `.gitkeep` file is ignored, link targets and private local
-storage paths are not exposed in the remote repository.

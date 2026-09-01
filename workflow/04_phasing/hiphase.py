@@ -47,6 +47,15 @@ def run(command):
 def prepare_small_vcf(config, source_vcf, compressed_dir):
     """Return a BGZF-compressed, indexed VCF suitable for HiPhase."""
     if source_vcf.name.endswith(".vcf.gz"):
+        compressed_index = Path(f"{source_vcf}.tbi")
+        if (
+            not complete(compressed_index)
+            or compressed_index.stat().st_mtime_ns < source_vcf.stat().st_mtime_ns
+        ):
+            run([
+                config.get("tabix", "tabix"), "--force", "--preset", "vcf",
+                source_vcf,
+            ])
         return source_vcf
 
     compressed_vcf = compressed_dir / f"{source_vcf.name}.gz"
@@ -82,6 +91,66 @@ def prepare_small_vcf(config, source_vcf, compressed_dir):
 
     print(f"Prepared BGZF VCF for HiPhase: {compressed_vcf}")
     return compressed_vcf
+
+
+def vcf_sample_name(config, vcf):
+    """Return the only sample name in a single-sample VCF."""
+    result = subprocess.run(
+        [str(config.get("bcftools", "bcftools")), "query", "--list-samples", str(vcf)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    samples = [line for line in result.stdout.splitlines() if line]
+    if len(samples) != 1:
+        raise ValueError(f"Expected one sample in {vcf}, found {len(samples)}: {samples}")
+    return samples[0]
+
+
+def normalize_vcf_sample(config, source_vcf, sample, target_name, output_dir):
+    """Rename a VCF's single sample when it does not match the HiPhase sample."""
+    source_name = vcf_sample_name(config, source_vcf)
+    if source_name == target_name:
+        return source_vcf
+
+    output_vcf = output_dir / f"{sample}.SV.vcf.gz"
+    output_index = Path(f"{output_vcf}.tbi")
+    if (
+        complete(output_vcf)
+        and complete(output_index)
+        and output_vcf.stat().st_mtime_ns >= source_vcf.stat().st_mtime_ns
+        and output_index.stat().st_mtime_ns >= output_vcf.stat().st_mtime_ns
+        and vcf_sample_name(config, output_vcf) == target_name
+    ):
+        return output_vcf
+
+    sample_names = output_dir / f".{sample}.SV.samples.tmp.txt"
+    temporary_vcf = output_dir / f".{sample}.SV.tmp.vcf.gz"
+    temporary_index = Path(f"{temporary_vcf}.tbi")
+    for stale_path in (sample_names, temporary_vcf, temporary_index):
+        stale_path.unlink(missing_ok=True)
+
+    try:
+        sample_names.write_text(f"{target_name}\n", encoding="utf-8")
+        run([
+            config.get("bcftools", "bcftools"), "reheader", "--samples", sample_names,
+            "--output", temporary_vcf, source_vcf,
+        ])
+        run([
+            config.get("tabix", "tabix"), "--force", "--preset", "vcf",
+            temporary_vcf,
+        ])
+        temporary_vcf.replace(output_vcf)
+        temporary_index.replace(output_index)
+    except Exception:
+        temporary_vcf.unlink(missing_ok=True)
+        temporary_index.unlink(missing_ok=True)
+        raise
+    finally:
+        sample_names.unlink(missing_ok=True)
+
+    print(f"Renamed VCF sample {source_name} to {target_name}: {output_vcf}")
+    return output_vcf
 
 
 def main():
@@ -129,15 +198,22 @@ def main():
             continue
 
         hiphase_small_vcf = prepare_small_vcf(config, small_vcf, compressed_input)
+        hiphase_sample = vcf_sample_name(config, hiphase_small_vcf)
+        hiphase_sv_vcf = normalize_vcf_sample(
+            config, sv_vcf, sample, hiphase_sample, compressed_input
+        )
         command = [
             config["hiphase"], "--threads", config.get("threads", 32),
             "--reference", reference, "--bam", bam, "--output-bam", phased_bam,
+            "--sample-name", hiphase_sample,
             "--vcf", hiphase_small_vcf, "--output-vcf", phased_small,
-            "--vcf", sv_vcf, "--output-vcf", phased_sv,
+            "--vcf", hiphase_sv_vcf, "--output-vcf", phased_sv,
             "--stats-file", variant_output / f"{sample}.stats.csv",
             "--blocks-file", variant_output / f"{sample}.blocks.tsv",
             "--summary-file", variant_output / f"{sample}.summary.tsv",
         ]
+        if sample in config.get("ignore_read_groups_samples", []):
+            command.append("--ignore-read-groups")
         run(command)
 
 

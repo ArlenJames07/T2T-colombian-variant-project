@@ -9,5 +9,6 @@
   "tabix": "tabix",
   "threads": 32,
   "sv_suffix": ".vcf.gz",
-  "small_vcf_glob": "*.vcf"
+  "small_vcf_glob": "*.vcf",
+  "ignore_read_groups_samples": []
 }
